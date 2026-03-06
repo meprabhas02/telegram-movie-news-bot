@@ -27,7 +27,6 @@ posted = set()
 def generate_hashtags(title):
 
     words = title.split()
-
     tags = []
 
     for w in words[:3]:
@@ -53,6 +52,18 @@ def send_photo(caption, image):
         })
 
 
+def send_message(text):
+
+    for channel in CHANNELS:
+
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+        requests.post(url, data={
+            "chat_id": channel,
+            "text": text
+        })
+
+
 def check_blog():
 
     feed = feedparser.parse(BLOG_RSS)
@@ -75,6 +86,8 @@ def check_blog():
 
             if image:
                 send_photo(caption, image)
+            else:
+                send_message(caption)
 
             posted.add(entry.link)
 
@@ -102,6 +115,8 @@ def check_news():
 
                 if image:
                     send_photo(caption, image)
+                else:
+                    send_message(caption)
 
                 posted.add(entry.link)
 
@@ -115,6 +130,7 @@ def run_bot():
 
 
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
