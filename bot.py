@@ -1,6 +1,5 @@
 import requests
 import feedparser
-import schedule
 import time
 import os
 from flask import Flask
@@ -13,7 +12,10 @@ CHANNELS = [
     os.getenv("CHANNEL_ID_2")
 ]
 
-RSS_FEEDS = [
+BLOG_RSS = "https://gkk-latest-updates.blogspot.com/feeds/posts/default?alt=rss"
+
+NEWS_RSS = [
+    "https://www.123telugu.com/feed",
     "https://telugu.filmibeat.com/rss/filmibeat-telugu-fb.xml",
     "https://www.gulte.com/feed",
     "https://www.greatandhra.com/rss/latest"
@@ -21,12 +23,24 @@ RSS_FEEDS = [
 
 posted = set()
 
-hashtags = "#Tollywood #TeluguMovies #TeluguCinema #MovieUpdates"
+
+def generate_hashtags(title):
+
+    words = title.split()
+
+    tags = []
+
+    for w in words[:3]:
+        tag = w.replace(",", "").replace(".", "")
+        tags.append("#" + tag)
+
+    tags.append("#Tollywood")
+    tags.append("#TeluguMovies")
+
+    return " ".join(tags)
 
 
-def send_photo(title, image):
-
-    caption = f"🎬 {title}\n\n{hashtags}"
+def send_photo(caption, image):
 
     for channel in CHANNELS:
 
@@ -39,9 +53,35 @@ def send_photo(title, image):
         })
 
 
+def check_blog():
+
+    feed = feedparser.parse(BLOG_RSS)
+
+    for entry in feed.entries[:5]:
+
+        if entry.link not in posted:
+
+            title = entry.title
+            link = entry.link
+
+            hashtags = generate_hashtags(title)
+
+            image = None
+
+            if "media_content" in entry:
+                image = entry.media_content[0]["url"]
+
+            caption = f"🎬 {title}\n\nRead full news:\n{link}\n\n{hashtags}"
+
+            if image:
+                send_photo(caption, image)
+
+            posted.add(entry.link)
+
+
 def check_news():
 
-    for feed_url in RSS_FEEDS:
+    for feed_url in NEWS_RSS:
 
         feed = feedparser.parse(feed_url)
 
@@ -50,32 +90,35 @@ def check_news():
             if entry.link not in posted:
 
                 title = entry.title
+
+                hashtags = generate_hashtags(title)
+
                 image = None
 
                 if "media_content" in entry:
                     image = entry.media_content[0]["url"]
 
+                caption = f"🎬 {title}\n\n{hashtags}"
+
                 if image:
-                    send_photo(title, image)
+                    send_photo(caption, image)
 
                 posted.add(entry.link)
-
-
-schedule.every(10).minutes.do(check_news)
 
 
 def run_bot():
 
     while True:
-        schedule.run_pending()
-        time.sleep(5)
+        check_blog()
+        check_news()
+        time.sleep(600)
 
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Telugu Movie News Bot Running"
+    return "Telugu Movie Bot Running"
 
 
 def run_web():
