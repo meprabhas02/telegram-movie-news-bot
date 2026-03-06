@@ -2,8 +2,11 @@ import requests
 import feedparser
 import time
 import os
-from flask import Flask
 import threading
+import re
+import hashlib
+from flask import Flask
+from PIL import Image, ImageDraw
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -21,8 +24,24 @@ NEWS_RSS = [
     "https://www.greatandhra.com/rss/latest"
 ]
 
-posted = set()
+posted_links = set()
+posted_titles = set()
 
+# -------- DUPLICATE PROTECTION --------
+
+def is_duplicate(title):
+
+    clean = title.lower().strip()
+    key = hashlib.md5(clean.encode()).hexdigest()
+
+    if key in posted_titles:
+        return True
+
+    posted_titles.add(key)
+    return False
+
+
+# -------- HASHTAGS --------
 
 def generate_hashtags(title):
 
@@ -38,6 +57,39 @@ def generate_hashtags(title):
 
     return " ".join(tags)
 
+
+# -------- IMAGE EXTRACTOR --------
+
+def extract_image(url):
+
+    try:
+        html = requests.get(url, timeout=10).text
+        match = re.search(r'<img[^>]+src="([^">]+)"', html)
+
+        if match:
+            return match.group(1)
+
+    except:
+        return None
+
+
+# -------- BLOG IMAGE GENERATOR --------
+
+def create_blog_image(title):
+
+    img = Image.new("RGB", (900, 450), color=(20,20,20))
+    draw = ImageDraw.Draw(img)
+
+    draw.text((40,200), title[:60], fill=(255,255,255))
+
+    path = "blog_image.jpg"
+
+    img.save(path)
+
+    return path
+
+
+# -------- TELEGRAM SENDERS --------
 
 def send_photo(caption, image):
 
@@ -64,33 +116,35 @@ def send_message(text):
         })
 
 
+# -------- BLOG CHECK --------
+
 def check_blog():
 
     feed = feedparser.parse(BLOG_RSS)
 
     for entry in feed.entries[:5]:
 
-        if entry.link not in posted:
+        if entry.link not in posted_links:
 
             title = entry.title
             link = entry.link
 
             hashtags = generate_hashtags(title)
 
-            image = None
-
-            if "media_content" in entry:
-                image = entry.media_content[0]["url"]
+            image = extract_image(link)
 
             caption = f"🎬 {title}\n\nRead full news:\n{link}\n\n{hashtags}"
 
             if image:
                 send_photo(caption, image)
             else:
-                send_message(caption)
+                auto_img = create_blog_image(title)
+                send_photo(caption, auto_img)
 
-            posted.add(entry.link)
+            posted_links.add(entry.link)
 
+
+# -------- NEWS CHECK --------
 
 def check_news():
 
@@ -100,37 +154,41 @@ def check_news():
 
         for entry in feed.entries[:5]:
 
-            if entry.link not in posted:
+            if entry.link not in posted_links and not is_duplicate(entry.title):
 
                 title = entry.title
+                link = entry.link
 
                 hashtags = generate_hashtags(title)
 
-                image = None
+                image = extract_image(link)
 
-                if "media_content" in entry:
-                    image = entry.media_content[0]["url"]
+                # NEWS must have image
+                if not image:
+                    continue
 
                 caption = f"🎬 {title}\n\n{hashtags}"
 
-                if image:
-                    send_photo(caption, image)
-                else:
-                    send_message(caption)
+                send_photo(caption, image)
 
-                posted.add(entry.link)
+                posted_links.add(entry.link)
 
+
+# -------- BOT LOOP --------
 
 def run_bot():
 
     while True:
+
         check_blog()
         check_news()
+
         time.sleep(600)
 
 
-app = Flask(__name__)
+# -------- WEB SERVER FOR RENDER --------
 
+app = Flask(__name__)
 
 @app.route("/")
 def home():
