@@ -2,3 +2,4 @@ requests
 feedparser
 flask
 pillow
+google-generativeai
